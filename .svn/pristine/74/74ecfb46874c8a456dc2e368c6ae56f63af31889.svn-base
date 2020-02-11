@@ -1,0 +1,321 @@
+package org.processmining.prediction;
+
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.util.Arrays;
+import java.util.Comparator;
+
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+
+import org.processmining.framework.util.ui.scalableview.ScalableComponent;
+import org.processmining.framework.util.ui.scalableview.ScalableViewPanel;
+import org.processmining.framework.util.ui.scalableview.interaction.ViewInteractionPanel;
+import org.processmining.prediction.Augmentation.Augmentation;
+
+import com.fluxicon.slickerbox.components.NiceDoubleSlider;
+import com.fluxicon.slickerbox.components.NiceIntegerSlider;
+import com.fluxicon.slickerbox.components.NiceSlider.Orientation;
+import com.fluxicon.slickerbox.components.RoundedPanel;
+import com.fluxicon.slickerbox.factory.SlickerFactory;
+
+public class ConfigurationPanel extends JPanel implements ViewInteractionPanel {
+
+	private final JCheckBox pruneBox;
+	private final NiceDoubleSlider confThreshold;
+	private final NiceIntegerSlider minNumInstancePerLeaf;
+	private final NiceIntegerSlider numFoldErrorPruning;
+	private final JCheckBox saveDataBox;
+	private final JCheckBox binaryBox;
+	private JComboBox outputAttribCbx=	SlickerFactory.instance().createComboBox(new String[]{"Please augment the log"});
+	private Augmentation lastSelectedAttribute=null;
+	private DecisionTreePanel frame;
+	private JRadioButton decRBtn;
+	private JRadioButton regRBtn;
+	private JRadioButton normVisBtn;
+	private JRadioButton prefuseVisBtn;
+
+	public ConfigurationPanel(final DecisionTreePanel frame, int numInstances)
+	{
+		this.frame=frame;
+		SlickerFactory instance=SlickerFactory.instance();
+		decRBtn=instance.createRadioButton("Decision Tree");
+		decRBtn.setSelected(true);
+
+		decRBtn.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent arg0) {
+				binaryBox.setEnabled(true);
+				saveDataBox.setEnabled(true);
+				frame.setRegressionTree(false);
+			}
+		});
+		
+		
+		regRBtn=instance.createRadioButton("Decision/Regression Tree");
+		regRBtn.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent arg0) {
+				binaryBox.setEnabled(false);
+				binaryBox.setSelected(false);
+				saveDataBox.setEnabled(false);
+				saveDataBox.setSelected(false);
+				frame.setRegressionTree(true);
+			}
+		});	
+	
+		ButtonGroup bgrp=new ButtonGroup();
+		bgrp.add(decRBtn);
+		bgrp.add(regRBtn);
+		
+		normVisBtn=instance.createRadioButton("Helicopter Visualization");
+		normVisBtn.setSelected(true);
+		
+		prefuseVisBtn=instance.createRadioButton("Explorative Visualization");
+		prefuseVisBtn.setSelected(true);
+		
+		bgrp=new ButtonGroup();
+		bgrp.add(normVisBtn);
+		bgrp.add(prefuseVisBtn);
+		
+		pruneBox= instance.createCheckBox("Prune Tree", true);
+		binaryBox= instance.createCheckBox("Binary Tree", false);
+		saveDataBox=	instance.createCheckBox("Instance data to be associated with tree's elements (slow!)", false);
+		confThreshold = instance.createNiceDoubleSlider("Set confidence threshold for pruning", 0.1, 1, 0.25, Orientation.HORIZONTAL);
+		minNumInstancePerLeaf=	instance.createNiceIntegerSlider("Minimum Number of instances per leaf", 2, numInstances, 3, Orientation.HORIZONTAL);
+		numFoldErrorPruning=		instance.createNiceIntegerSlider("Number of folds for reduced error pruning", 2, 10, 2, Orientation.HORIZONTAL);
+		
+		setLayout(new GridLayout(11,1));
+		add(SlickerFactory.instance().createLabel("Dependent characteristic:"));
+		add(outputAttribCbx);
+		RoundedPanel algorithmPnl=new RoundedPanel();
+		algorithmPnl.setLayout(new FlowLayout(FlowLayout.CENTER));
+		algorithmPnl.add(decRBtn);
+		algorithmPnl.add(regRBtn);
+		add(algorithmPnl);
+		RoundedPanel visMethodPnl = new RoundedPanel();
+		visMethodPnl.setLayout(new FlowLayout(FlowLayout.CENTER));
+		visMethodPnl.add(normVisBtn);
+		visMethodPnl.add(prefuseVisBtn);
+		add(visMethodPnl);
+		add(pruneBox);
+		add(binaryBox);
+		add(saveDataBox);
+		add(confThreshold);
+		add(minNumInstancePerLeaf);
+		add(numFoldErrorPruning);
+		JPanel panel=new JPanel();
+		JButton button=SlickerFactory.instance().createButton("Update Decision Tree");
+		button.addActionListener(new ActionListener() {
+			
+			@SuppressWarnings("unchecked")
+			public void actionPerformed(ActionEvent arg0) {
+				try {
+					frame.setEnabled(false);
+					
+					TaskForProgressBar task1=new TaskForProgressBar(null,"Learning Decision Tree","",0,100) {
+
+						protected Void doInBackground() throws Exception {
+							frame.createPanel(this);
+							return null;
+						}
+
+						protected void done() {
+							frame.setEnabled(true);
+						}
+
+					};
+
+					task1.execute();					
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				
+			}
+
+		});;
+		panel.add(button);
+		add(panel);
+		
+		outputAttribCbx.addActionListener(new ActionListener() {
+			
+			public void actionPerformed(ActionEvent arg0) {
+				if (outputAttribCbx.getSelectedItem() instanceof Augmentation)
+					setOutputAttribute((Augmentation) outputAttribCbx.getSelectedItem());
+				
+			}
+		});
+	}
+	
+	public void setOutputAttribute(Augmentation attribute)
+	{
+		if (attribute!=lastSelectedAttribute)
+		{
+			frame.setOutputAttribute(attribute);
+			lastSelectedAttribute=attribute;
+		}		
+	}
+	
+	public void setAttributeAugmentation(final Augmentation[] array)
+	{
+		try {
+			frame.setEnabled(false);
+			
+			if (array.length==0 || !frame.configureAugmentation(array))
+			{
+				outputAttribCbx.removeAllItems();
+				outputAttribCbx.addItem("Please augment the event log");
+				setOutputAttribute(null);
+				frame.createPanel(null);
+				frame.setEnabled(true);
+				return;
+			}
+			
+			
+			final TaskForProgressBar task2=new TaskForProgressBar(frame,"Learning Decision Tree","",0,100) {
+
+				protected Void doInBackground() throws Exception {
+					outputAttribCbx.removeAllItems();
+					boolean lastSelectAttributeIsPresent=false;
+					try
+					{
+						Arrays.sort(array, new Comparator<Augmentation>() {
+
+							public int compare(Augmentation o1, Augmentation o2) {
+								return o1.getAttributeName().compareToIgnoreCase(o2.getAttributeName());
+							}
+
+						});
+					}catch(NullPointerException err)
+					{
+						err.printStackTrace();
+					}
+					ActionListener listener=outputAttribCbx.getActionListeners()[0];
+					outputAttribCbx.removeActionListener(listener);
+					for(Augmentation aug : array)
+					{
+						if (aug==lastSelectedAttribute)
+							lastSelectAttributeIsPresent=true;
+						outputAttribCbx.addItem(aug);
+					}
+					outputAttribCbx.addActionListener(listener);
+					if (lastSelectAttributeIsPresent)
+					{
+						Augmentation aux = lastSelectedAttribute;
+						lastSelectedAttribute=null;
+						outputAttribCbx.setSelectedItem(aux);
+					}
+					else if (array.length > 0)
+						outputAttribCbx.setSelectedIndex(0);
+					frame.createPanel(this);
+					frame.setEnabled(true);
+					return null;
+				}				
+
+			};
+
+			TaskForProgressBar task1=new TaskForProgressBar(frame,"Creating decision-tree training instances","",0,100) {
+
+				private boolean outcome;
+
+				protected Void doInBackground() throws Exception {
+					outcome=frame.augmentLog(this);
+					return null;
+				}
+
+				protected void done() {
+					if (outcome)
+						task2.execute();
+					else
+					{
+						frame.setEnabled(true);
+						myProgress(100);
+					}
+
+				}
+
+			};
+
+			task1.execute();
+
+
+
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			frame.setEnabled(true);
+		}
+	}
+
+	public JComponent getComponent() {
+		return this;
+	}
+
+	public double getHeightInView() {
+		// TODO Auto-generated method stub
+		return this.getPreferredSize().getHeight();
+	}
+
+	public String getPanelName() {
+		return "Configuration";
+	}
+
+	public double getWidthInView() {
+		return this.getPreferredSize().getWidth();
+	}
+
+	public void setParent(ScalableViewPanel viewPanel) {
+
+	}
+
+	public void setScalableComponent(ScalableComponent scalable) {
+
+	}
+
+	public void willChangeVisibility(boolean to) {
+		
+	}
+
+	public void updated() {
+
+	}
+
+	public boolean prunedTree() {
+		return pruneBox.isSelected();
+	}
+
+	public float getConfidenceThreshold() {
+		return (float) confThreshold.getValue();
+	}
+
+	public int getMinNumInstancePerLeaf() {
+		return minNumInstancePerLeaf.getValue();
+	}
+
+	public int getNumFoldErrorPruning() {
+		return numFoldErrorPruning.getValue();
+	}
+	
+	public boolean isRegressionTree()
+	{
+		return regRBtn.isSelected();
+	}
+
+	public boolean binaryTree() {
+		return binaryBox.isSelected();
+	}
+
+	public boolean saveData() {
+		return saveDataBox.isSelected();
+	}
+
+	public boolean isNormalVisualizationSelected() {
+		return normVisBtn.isSelected();
+	}
+
+}
